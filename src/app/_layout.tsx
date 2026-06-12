@@ -3,9 +3,11 @@ import { StatusBar } from "expo-status-bar";
 import { Pressable, Text } from "react-native";
 
 import { useTheme } from "@/hooks/use-theme";
+import { useReminderDeepLink } from "@/notifications/use-reminder-deeplink";
 
 export default function RootLayout() {
   const { colors, isDark } = useTheme();
+  useReminderDeepLink();
 
   return (
     <>

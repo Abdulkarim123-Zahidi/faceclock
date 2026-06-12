@@ -1,6 +1,6 @@
 import { Directory, File, Paths } from "expo-file-system";
-import * as SQLite from "expo-sqlite";
 
+import { getDb } from "@/data/db";
 import { renderThumbnail } from "@/data/thumbnails";
 import type { EntriesRepo, NewEntryInput } from "@/data/types";
 import type { Entry } from "@/types/entry";
@@ -19,33 +19,6 @@ type EntryRow = {
   created_at: number;
   edited_at: number | null;
 };
-
-let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
-
-function getDb(): Promise<SQLite.SQLiteDatabase> {
-  dbPromise ??= openAndMigrate();
-  return dbPromise;
-}
-
-async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
-  const db = await SQLite.openDatabaseAsync("faceclock.db");
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS entries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL,
-      image_uri TEXT NOT NULL,
-      thumb_uri TEXT,
-      original_uri TEXT,
-      note TEXT,
-      mood TEXT,
-      created_at INTEGER NOT NULL,
-      edited_at INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
-  `);
-  return db;
-}
 
 function photosDir(): Directory {
   const dir = new Directory(Paths.document, "photos");
