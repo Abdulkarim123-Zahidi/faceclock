@@ -138,6 +138,19 @@ export const entriesRepo: EntriesRepo = {
     return row ? rowToEntry(row) : null;
   },
 
+  async updateNote(
+    id: number,
+    note: string | null,
+    mood: string | null,
+  ): Promise<void> {
+    const db = await getDb();
+    await db.runAsync("UPDATE entries SET note = ?, mood = ? WHERE id = ?", [
+      note,
+      mood,
+      id,
+    ]);
+  },
+
   async remove(id: number): Promise<void> {
     const db = await getDb();
     const row = await db.getFirstAsync<EntryRow>(

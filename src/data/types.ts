@@ -25,6 +25,11 @@ export interface EntriesRepo {
   /** All entries, newest first. */
   listAll(): Promise<Entry[]>;
   getById(id: number): Promise<Entry | null>;
+  updateNote(
+    id: number,
+    note: string | null,
+    mood: string | null,
+  ): Promise<void>;
   /** Removes the row/record AND every stored image for the entry. */
   remove(id: number): Promise<void>;
 }

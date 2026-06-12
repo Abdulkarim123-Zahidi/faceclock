@@ -117,6 +117,19 @@ export const entriesRepo: EntriesRepo = {
     return record ? materialize(record) : null;
   },
 
+  async updateNote(
+    id: number,
+    note: string | null,
+    mood: string | null,
+  ): Promise<void> {
+    const s = await store("readwrite");
+    const record = (await asPromise(s.get(id))) as EntryRecord | undefined;
+    if (!record) return;
+    record.note = note;
+    record.mood = mood;
+    await asPromise(s.put(record));
+  },
+
   async remove(id: number): Promise<void> {
     const s = await store("readwrite");
     await asPromise(s.delete(id));
