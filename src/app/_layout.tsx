@@ -1,5 +1,6 @@
-import { Stack } from "expo-router";
+import { Link, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { Pressable, Text } from "react-native";
 
 import { useTheme } from "@/hooks/use-theme";
 
@@ -17,7 +18,19 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen name="index" options={{ title: "FaceClock" }} />
+        <Stack.Screen
+          name="index"
+          options={{
+            title: "FaceClock",
+            headerRight: () => (
+              <Link href="/settings" asChild>
+                <Pressable hitSlop={8}>
+                  <Text style={{ fontSize: 20 }}>⚙️</Text>
+                </Pressable>
+              </Link>
+            ),
+          }}
+        />
         <Stack.Screen name="camera" options={{ title: "Camera" }} />
         <Stack.Screen name="preview" options={{ title: "Preview" }} />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />

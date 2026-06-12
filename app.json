@@ -34,6 +34,13 @@
             "imageWidth": 76
           }
         }
+      ],
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FaceClock uses the camera so you can take your daily selfie."
+        }
       ]
     ],
     "experiments": {

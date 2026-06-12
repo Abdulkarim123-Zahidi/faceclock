@@ -1,19 +1,101 @@
-import { StyleSheet, Text } from "react-native";
+import { Image } from "expo-image";
+import { Redirect, useRouter } from "expo-router";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Screen } from "@/components/screen";
+import { clearPendingPhoto, getPendingPhoto } from "@/capture/pending-photo";
+import { entriesRepo } from "@/data/entries-repo";
 import { useTheme } from "@/hooks/use-theme";
+import { toLocalDateString } from "@/lib/date";
 
 export default function PreviewScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const photo = getPendingPhoto();
+
+  // Deep-reload or direct URL visit: nothing to preview, go capture.
+  if (!photo) {
+    return <Redirect href="/camera" />;
+  }
+
+  function retake() {
+    clearPendingPhoto();
+    router.back();
+  }
+
+  async function save() {
+    if (!photo || saving) return;
+    setSaving(true);
+    try {
+      const now = new Date();
+      await entriesRepo.create({
+        sourceUri: photo.uri,
+        date: toLocalDateString(now),
+        createdAt: now.getTime(),
+      });
+      clearPendingPhoto();
+      router.dismissTo("/");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <Screen centered>
-      <Text style={[styles.placeholder, { color: colors.textSecondary }]}>
-        Capture preview (Retake / Edit / Save) lands in Milestone 2.
-      </Text>
-    </Screen>
+    <View style={styles.root}>
+      <Image
+        source={{ uri: photo.uri }}
+        style={styles.photo}
+        contentFit="contain"
+      />
+      <View style={styles.actions}>
+        <Pressable style={styles.secondary} onPress={retake} disabled={saving}>
+          <Text style={styles.secondaryLabel}>Retake</Text>
+        </Pressable>
+        {/* Editing lands in Milestone 5. */}
+        <Pressable style={[styles.secondary, styles.disabled]} disabled>
+          <Text style={styles.secondaryLabel}>Edit</Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.primary,
+            { backgroundColor: colors.accent },
+            saving && styles.disabled,
+          ]}
+          onPress={save}
+          disabled={saving}
+        >
+          <Text style={styles.primaryLabel}>
+            {saving ? "Saving…" : "Save"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  placeholder: { fontSize: 15, textAlign: "center" },
+  root: { flex: 1, backgroundColor: "#000" },
+  photo: { flex: 1 },
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-evenly",
+    paddingVertical: 20,
+    backgroundColor: "#000",
+  },
+  primary: {
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  primaryLabel: { color: "#FFF", fontSize: 16, fontWeight: "600" },
+  secondary: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  secondaryLabel: { color: "#FFF", fontSize: 16, fontWeight: "600" },
+  disabled: { opacity: 0.4 },
 });
