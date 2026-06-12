@@ -77,6 +77,14 @@ function materialize(record: EntryRecord): Entry {
   };
 }
 
+function dropCachedUrls(id: number) {
+  const urls = urlCache.get(id);
+  if (!urls) return;
+  URL.revokeObjectURL(urls.image);
+  if (urls.thumb) URL.revokeObjectURL(urls.thumb);
+  urlCache.delete(id);
+}
+
 async function uriToBlob(uri: string): Promise<Blob> {
   // Works for data:, blob:, and http(s): URIs alike.
   const response = await fetch(uri);
@@ -130,14 +138,50 @@ export const entriesRepo: EntriesRepo = {
     await asPromise(s.put(record));
   },
 
+  async applyEdit(id: number, editedSourceUri: string): Promise<void> {
+    // Convert blobs BEFORE opening the transaction — IndexedDB
+    // transactions auto-close while awaiting non-IDB promises.
+    const newBlob = await uriToBlob(editedSourceUri);
+    const thumbBlob = await uriToBlob(await renderThumbnail(editedSourceUri));
+
+    const s = await store("readwrite");
+    const record = (await asPromise(s.get(id))) as EntryRecord | undefined;
+    if (!record) return;
+    record.originalBlob ??= record.imageBlob;
+    record.imageBlob = newBlob;
+    record.thumbBlob = thumbBlob;
+    record.editedAt = Date.now();
+    await asPromise(s.put(record));
+    dropCachedUrls(id);
+  },
+
+  async revertEdit(id: number): Promise<void> {
+    const s0 = await store("readonly");
+    const existing = (await asPromise(s0.get(id))) as EntryRecord | undefined;
+    if (!existing?.originalBlob) return;
+
+    const originalUrl = URL.createObjectURL(existing.originalBlob);
+    let thumbBlob: Blob;
+    try {
+      thumbBlob = await uriToBlob(await renderThumbnail(originalUrl));
+    } finally {
+      URL.revokeObjectURL(originalUrl);
+    }
+
+    const s = await store("readwrite");
+    const record = (await asPromise(s.get(id))) as EntryRecord | undefined;
+    if (!record?.originalBlob) return;
+    record.imageBlob = record.originalBlob;
+    record.originalBlob = null;
+    record.thumbBlob = thumbBlob;
+    record.editedAt = null;
+    await asPromise(s.put(record));
+    dropCachedUrls(id);
+  },
+
   async remove(id: number): Promise<void> {
     const s = await store("readwrite");
     await asPromise(s.delete(id));
-    const urls = urlCache.get(id);
-    if (urls) {
-      URL.revokeObjectURL(urls.image);
-      if (urls.thumb) URL.revokeObjectURL(urls.thumb);
-      urlCache.delete(id);
-    }
+    dropCachedUrls(id);
   },
 };

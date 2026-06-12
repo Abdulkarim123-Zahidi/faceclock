@@ -124,6 +124,64 @@ export const entriesRepo: EntriesRepo = {
     ]);
   },
 
+  async applyEdit(id: number, editedSourceUri: string): Promise<void> {
+    const db = await getDb();
+    const row = await db.getFirstAsync<EntryRow>(
+      "SELECT * FROM entries WHERE id = ?",
+      [id],
+    );
+    if (!row) return;
+
+    const dir = photosDir();
+    const now = Date.now();
+    const base = `${now}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const dest = new File(dir, `${base}.jpg`);
+    new File(editedSourceUri).move(dest);
+    const thumbTemp = new File(await renderThumbnail(dest.uri));
+    const thumbDest = new File(dir, `${base}-thumb.jpg`);
+    thumbTemp.move(thumbDest);
+
+    let originalUri = row.original_uri;
+    if (originalUri) {
+      // Re-edit: drop the intermediate edit, keep the true original.
+      deleteIfExists(row.image_uri);
+    } else {
+      originalUri = row.image_uri;
+    }
+    deleteIfExists(row.thumb_uri);
+
+    await db.runAsync(
+      `UPDATE entries SET image_uri = ?, thumb_uri = ?, original_uri = ?,
+       edited_at = ? WHERE id = ?`,
+      [dest.uri, thumbDest.uri, originalUri, now, id],
+    );
+  },
+
+  async revertEdit(id: number): Promise<void> {
+    const db = await getDb();
+    const row = await db.getFirstAsync<EntryRow>(
+      "SELECT * FROM entries WHERE id = ?",
+      [id],
+    );
+    if (!row?.original_uri) return;
+
+    deleteIfExists(row.image_uri);
+    deleteIfExists(row.thumb_uri);
+    const thumbTemp = new File(await renderThumbnail(row.original_uri));
+    const thumbDest = new File(
+      photosDir(),
+      `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-thumb.jpg`,
+    );
+    thumbTemp.move(thumbDest);
+
+    await db.runAsync(
+      `UPDATE entries SET image_uri = ?, thumb_uri = ?, original_uri = NULL,
+       edited_at = NULL WHERE id = ?`,
+      [row.original_uri, thumbDest.uri, id],
+    );
+  },
+
   async remove(id: number): Promise<void> {
     const db = await getDb();
     const row = await db.getFirstAsync<EntryRow>(

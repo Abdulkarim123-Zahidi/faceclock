@@ -24,18 +24,36 @@ export default function PreviewScreen() {
     router.back();
   }
 
+  async function persist() {
+    if (!photo) return null;
+    const now = new Date();
+    const entry = await entriesRepo.create({
+      sourceUri: photo.uri,
+      date: toLocalDateString(now),
+      createdAt: now.getTime(),
+    });
+    clearPendingPhoto();
+    return entry;
+  }
+
   async function save() {
-    if (!photo || saving) return;
+    if (saving) return;
     setSaving(true);
     try {
-      const now = new Date();
-      await entriesRepo.create({
-        sourceUri: photo.uri,
-        date: toLocalDateString(now),
-        createdAt: now.getTime(),
-      });
-      clearPendingPhoto();
-      router.dismissTo("/");
+      if (await persist()) router.dismissTo("/");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // "Edit" saves first (the editor works on stored entries), then jumps
+  // straight into it; edits are non-destructive so nothing is lost.
+  async function saveAndEdit() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const entry = await persist();
+      if (entry) router.replace(`/edit/${entry.id}`);
     } finally {
       setSaving(false);
     }
@@ -52,8 +70,11 @@ export default function PreviewScreen() {
         <Pressable style={styles.secondary} onPress={retake} disabled={saving}>
           <Text style={styles.secondaryLabel}>Retake</Text>
         </Pressable>
-        {/* Editing lands in Milestone 5. */}
-        <Pressable style={[styles.secondary, styles.disabled]} disabled>
+        <Pressable
+          style={styles.secondary}
+          onPress={saveAndEdit}
+          disabled={saving}
+        >
           <Text style={styles.secondaryLabel}>Edit</Text>
         </Pressable>
         <Pressable
