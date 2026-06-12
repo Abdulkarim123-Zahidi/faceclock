@@ -9,7 +9,10 @@ const THUMB_WIDTH = 320;
  */
 export async function renderThumbnail(sourceUri: string): Promise<string> {
   const context = ImageManipulator.manipulate(sourceUri);
-  context.resize({ width: THUMB_WIDTH, height: null });
+  // Omit height so it's derived from the aspect ratio. Don't pass
+  // height: null — the web resize action checks `!== undefined`, so
+  // null gets used as a literal 0-pixel height and createImageData throws.
+  context.resize({ width: THUMB_WIDTH });
   const image = await context.renderAsync();
   const saved = await image.saveAsync({
     compress: 0.7,
