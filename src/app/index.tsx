@@ -18,8 +18,13 @@ export default function GalleryScreen() {
           Take your first selfie to start your timeline.
         </Text>
         <Link href="/camera" asChild>
+          {/* Link asChild children must get a flat style object, not an array
+              (expo-router SDK 56 throws on arrays). */}
           <Pressable
-            style={[styles.primaryButton, { backgroundColor: colors.accent }]}
+            style={StyleSheet.flatten([
+              styles.primaryButton,
+              { backgroundColor: colors.accent },
+            ])}
           >
             <Text style={styles.primaryButtonLabel}>Open camera</Text>
           </Pressable>
