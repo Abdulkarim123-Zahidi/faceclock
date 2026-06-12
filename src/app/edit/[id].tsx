@@ -1,8 +1,9 @@
 import Slider from "@react-native-community/slider";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { CropOverlay } from "@/components/crop-overlay";
 import { EditPreview } from "@/components/edit-preview";
 import { Screen } from "@/components/screen";
 import { entriesRepo } from "@/data/entries-repo";
@@ -15,7 +16,14 @@ import {
   type EditAdjustments,
   type FilterPreset,
 } from "@/image/color-matrix";
-import { cropCenterSquare, flip, rotate } from "@/image/geometry";
+import {
+  cropCenterSquare,
+  cropRect,
+  flip,
+  getImageSize,
+  rotate,
+  type CropRect,
+} from "@/image/geometry";
 import { confirmAsync } from "@/lib/confirm";
 import type { Entry } from "@/types/entry";
 
@@ -38,6 +46,12 @@ export default function EditScreen() {
   const [adjustments, setAdjustments] =
     useState<EditAdjustments>(NEUTRAL_ADJUSTMENTS);
   const [busy, setBusy] = useState(false);
+  const [cropMode, setCropMode] = useState(false);
+  const [imageDims, setImageDims] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const cropRectRef = useRef<CropRect | null>(null);
 
   useEffect(() => {
     entriesRepo.getById(entryId).then((found) => {
@@ -47,6 +61,19 @@ export default function EditScreen() {
       }
     });
   }, [entryId]);
+
+  // The crop overlay needs pixel dimensions to map screen <-> image
+  // coordinates; re-probe after every geometry change (rotate swaps them).
+  useEffect(() => {
+    if (!workingUri) return;
+    let active = true;
+    getImageSize(workingUri).then((dims) => {
+      if (active) setImageDims(dims);
+    });
+    return () => {
+      active = false;
+    };
+  }, [workingUri]);
 
   const matrix = useMemo(() => buildColorMatrix(adjustments), [adjustments]);
 
@@ -64,6 +91,15 @@ export default function EditScreen() {
       setWorkingUri(await op(workingUri));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function applyCrop() {
+    const selection = cropRectRef.current;
+    cropRectRef.current = null;
+    setCropMode(false);
+    if (selection) {
+      await applyGeometry((u) => cropRect(u, selection));
     }
   }
 
@@ -100,116 +136,177 @@ export default function EditScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <View style={styles.previewArea}>
         <EditPreview uri={workingUri} matrix={matrix} />
-      </View>
-
-      <View style={styles.toolRow}>
-        <Tool label="⟲" onPress={() => applyGeometry((u) => rotate(u, -90))} />
-        <Tool label="⟳" onPress={() => applyGeometry((u) => rotate(u, 90))} />
-        <Tool
-          label="Flip H"
-          onPress={() => applyGeometry((u) => flip(u, "horizontal"))}
-        />
-        <Tool
-          label="Flip V"
-          onPress={() => applyGeometry((u) => flip(u, "vertical"))}
-        />
-        <Tool label="Square" onPress={() => applyGeometry(cropCenterSquare)} />
-      </View>
-
-      <View style={styles.sliderRow}>
-        <Text style={[styles.sliderLabel, { color: colors.textSecondary }]}>
-          Brightness
-        </Text>
-        <Slider
-          style={styles.slider}
-          minimumValue={-50}
-          maximumValue={50}
-          step={5}
-          value={adjustments.brightness}
-          minimumTrackTintColor={colors.accent}
-          onValueChange={(brightness) =>
-            setAdjustments((a) => ({ ...a, brightness }))
-          }
-        />
-      </View>
-      <View style={styles.sliderRow}>
-        <Text style={[styles.sliderLabel, { color: colors.textSecondary }]}>
-          Contrast
-        </Text>
-        <Slider
-          style={styles.slider}
-          minimumValue={-50}
-          maximumValue={50}
-          step={5}
-          value={adjustments.contrast}
-          minimumTrackTintColor={colors.accent}
-          onValueChange={(contrast) =>
-            setAdjustments((a) => ({ ...a, contrast }))
-          }
-        />
-      </View>
-
-      <View style={styles.presetRow}>
-        {PRESETS.map((p) => (
-          <Pressable
-            key={p.key}
-            onPress={() => setAdjustments((a) => ({ ...a, preset: p.key }))}
-            style={[
-              styles.presetChip,
-              { backgroundColor: colors.surface },
-              adjustments.preset === p.key && {
-                backgroundColor: colors.accent,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.presetLabel,
-                {
-                  color:
-                    adjustments.preset === p.key ? "#FFF" : colors.text,
-                },
-              ]}
-            >
-              {p.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.actions}>
-        {entry.editedAt !== null && (
-          <Pressable onPress={revert} disabled={busy} hitSlop={8}>
-            <Text style={[styles.revertLabel, { color: colors.danger }]}>
-              Revert to original
-            </Text>
-          </Pressable>
+        {cropMode && imageDims && (
+          // Keyed by URI so the selection resets if the image changes.
+          <CropOverlay
+            key={workingUri}
+            imageWidth={imageDims.width}
+            imageHeight={imageDims.height}
+            onRectChange={(r) => {
+              cropRectRef.current = r;
+            }}
+          />
         )}
-        <View style={styles.actionButtons}>
-          <Pressable
-            style={[styles.action, { backgroundColor: colors.surface }]}
-            onPress={() => router.back()}
-            disabled={busy}
-          >
-            <Text style={[styles.actionLabel, { color: colors.text }]}>
-              Cancel
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[
-              styles.action,
-              { backgroundColor: colors.accent },
-              (busy || !dirty) && styles.dimmed,
-            ]}
-            onPress={save}
-            disabled={busy || !dirty}
-          >
-            <Text style={[styles.actionLabel, { color: "#FFF" }]}>
-              {busy ? "Working…" : "Save"}
-            </Text>
-          </Pressable>
-        </View>
       </View>
+
+      {cropMode ? (
+        <>
+          <Text style={[styles.cropHint, { color: colors.textSecondary }]}>
+            Drag the corners or move the frame, then apply.
+          </Text>
+          <View style={styles.actionButtons}>
+            <Pressable
+              style={[styles.action, { backgroundColor: colors.surface }]}
+              onPress={() => {
+                cropRectRef.current = null;
+                setCropMode(false);
+              }}
+              disabled={busy}
+            >
+              <Text style={[styles.actionLabel, { color: colors.text }]}>
+                Cancel
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.action,
+                { backgroundColor: colors.accent },
+                busy && styles.dimmed,
+              ]}
+              onPress={applyCrop}
+              disabled={busy}
+            >
+              <Text style={[styles.actionLabel, { color: "#FFF" }]}>
+                Apply crop
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={styles.toolRow}>
+            <Tool
+              label="⟲"
+              onPress={() => applyGeometry((u) => rotate(u, -90))}
+            />
+            <Tool
+              label="⟳"
+              onPress={() => applyGeometry((u) => rotate(u, 90))}
+            />
+            <Tool
+              label="Flip H"
+              onPress={() => applyGeometry((u) => flip(u, "horizontal"))}
+            />
+            <Tool
+              label="Flip V"
+              onPress={() => applyGeometry((u) => flip(u, "vertical"))}
+            />
+            <Tool
+              label="Crop"
+              onPress={() => imageDims && !busy && setCropMode(true)}
+            />
+            <Tool
+              label="Square"
+              onPress={() => applyGeometry(cropCenterSquare)}
+            />
+          </View>
+
+          <View style={styles.sliderRow}>
+            <Text style={[styles.sliderLabel, { color: colors.textSecondary }]}>
+              Brightness
+            </Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={-50}
+              maximumValue={50}
+              step={5}
+              value={adjustments.brightness}
+              minimumTrackTintColor={colors.accent}
+              onValueChange={(brightness) =>
+                setAdjustments((a) => ({ ...a, brightness }))
+              }
+            />
+          </View>
+          <View style={styles.sliderRow}>
+            <Text style={[styles.sliderLabel, { color: colors.textSecondary }]}>
+              Contrast
+            </Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={-50}
+              maximumValue={50}
+              step={5}
+              value={adjustments.contrast}
+              minimumTrackTintColor={colors.accent}
+              onValueChange={(contrast) =>
+                setAdjustments((a) => ({ ...a, contrast }))
+              }
+            />
+          </View>
+
+          <View style={styles.presetRow}>
+            {PRESETS.map((p) => (
+              <Pressable
+                key={p.key}
+                onPress={() => setAdjustments((a) => ({ ...a, preset: p.key }))}
+                style={[
+                  styles.presetChip,
+                  { backgroundColor: colors.surface },
+                  adjustments.preset === p.key && {
+                    backgroundColor: colors.accent,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.presetLabel,
+                    {
+                      color:
+                        adjustments.preset === p.key ? "#FFF" : colors.text,
+                    },
+                  ]}
+                >
+                  {p.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.actions}>
+            {entry.editedAt !== null && (
+              <Pressable onPress={revert} disabled={busy} hitSlop={8}>
+                <Text style={[styles.revertLabel, { color: colors.danger }]}>
+                  Revert to original
+                </Text>
+              </Pressable>
+            )}
+            <View style={styles.actionButtons}>
+              <Pressable
+                style={[styles.action, { backgroundColor: colors.surface }]}
+                onPress={() => router.back()}
+                disabled={busy}
+              >
+                <Text style={[styles.actionLabel, { color: colors.text }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.action,
+                  { backgroundColor: colors.accent },
+                  (busy || !dirty) && styles.dimmed,
+                ]}
+                onPress={save}
+                disabled={busy || !dirty}
+              >
+                <Text style={[styles.actionLabel, { color: "#FFF" }]}>
+                  {busy ? "Working…" : "Save"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -229,7 +326,13 @@ function Tool({ label, onPress }: { label: string; onPress: () => void }) {
 const styles = StyleSheet.create({
   root: { flex: 1, padding: 16, gap: 12 },
   previewArea: { flex: 1, borderRadius: 12, overflow: "hidden" },
-  toolRow: { flexDirection: "row", gap: 8, justifyContent: "center" },
+  toolRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+  },
+  cropHint: { fontSize: 13, textAlign: "center" },
   tool: {
     paddingHorizontal: 14,
     paddingVertical: 8,

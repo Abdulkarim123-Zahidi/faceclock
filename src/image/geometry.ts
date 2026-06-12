@@ -34,15 +34,34 @@ export async function flip(
   return renderToUri(context);
 }
 
-/** Center-square crop — v1's "crop" (no draggable handles yet). */
-export async function cropCenterSquare(uri: string): Promise<string> {
-  // First render just to learn the dimensions.
-  const probe = await ImageManipulator.manipulate(uri).renderAsync();
-  const side = Math.min(probe.width, probe.height);
-  const originX = Math.floor((probe.width - side) / 2);
-  const originY = Math.floor((probe.height - side) / 2);
+export type CropRect = {
+  originX: number;
+  originY: number;
+  width: number;
+  height: number;
+};
 
+export async function cropRect(uri: string, rect: CropRect): Promise<string> {
   const context = ImageManipulator.manipulate(uri);
-  context.crop({ originX, originY, width: side, height: side });
+  context.crop(rect);
   return renderToUri(context);
+}
+
+/** One-tap centered square crop. */
+export async function cropCenterSquare(uri: string): Promise<string> {
+  const { width, height } = await getImageSize(uri);
+  const side = Math.min(width, height);
+  return cropRect(uri, {
+    originX: Math.floor((width - side) / 2),
+    originY: Math.floor((height - side) / 2),
+    width: side,
+    height: side,
+  });
+}
+
+export async function getImageSize(
+  uri: string,
+): Promise<{ width: number; height: number }> {
+  const probe = await ImageManipulator.manipulate(uri).renderAsync();
+  return { width: probe.width, height: probe.height };
 }
